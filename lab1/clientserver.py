@@ -99,9 +99,13 @@ class Server:
                     # Determine response message
                     formatted_msg: str
                     if command == 'GET':
-                        query_param: str = data_lines[1]
-                        tel_result = self.get_tel(query_param)
-                        formatted_msg = self.format_get_result(tel_result)
+                        if len(data_lines) < 2:
+                            self._logger.warning("Malformed GET command received (missing parameter).")
+                            formatted_msg = 'ERR\nMalformed GET command'
+                        else:
+                            query_param: str = data_lines[1]
+                            tel_result = self.get_tel(query_param)
+                            formatted_msg = self.format_get_result(tel_result)
                     elif command == 'GETALL':
                         tel_result = self.getall_tel()
                         formatted_msg = self.format_getall_result(tel_result)
@@ -179,7 +183,6 @@ class Client:
             msg = 'Weird response from server'
             self.logger.warning("Command %s not supported", command)
 
-        print(msg)
         self.sock.close()  # close the connection
         self.logger.info("Client down.")
         return msg
