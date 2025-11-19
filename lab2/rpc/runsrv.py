@@ -10,5 +10,10 @@ chan = lab_channel.Channel()
 chan.channel.flushall()
 logger.debug('Flushed all redis keys.')
 
+# added logging for threading
+logger.info('Starting asynchronous RPC server...')
+logger.info('Server will acknowledge requests immediately and process them asynchronously.')
+
 srv = rpc.Server()
 srv.run()
+
