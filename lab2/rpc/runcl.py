@@ -23,6 +23,7 @@ base_list = rpc.DBList({'foo'})
 # make asynchronous RPC call with callback
 logger.info("Making asynchronous RPC call...")
 cl.append('bar', base_list, callback=result_callback)
+#cl.append('test', base_list, callback=result_callback)
 
 # simulate that client continues to work while waiting for response
 logger.info("Client continues to do other work while waiting for server response...")

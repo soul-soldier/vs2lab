@@ -113,7 +113,7 @@ class Server:
         try:
             self.logger.info(f"Processing request from client {client}")
             # simulate long processing
-            time.sleep(10)
+            time.sleep(3)
             
             # do the actual work
             result = self.append(msgrpc[1], msgrpc[2])  # local call
