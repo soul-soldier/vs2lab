@@ -73,8 +73,8 @@ def main():
         print("[System] Please interact with the Splitter prompt below:")
         print("--------------------------------------")
         
-        # We assume splitter.py handles its own print/input natively
-        splitter_cmd = [sys.executable, "-u", os.path.join(base_dir, "splitter.py")]
+        # MODIFICATION: Add "text.txt" to the splitter_cmd list
+        splitter_cmd = [sys.executable, "-u", os.path.join(base_dir, "splitter.py"), "text.txt"]
         subprocess.run(splitter_cmd)
 
     except KeyboardInterrupt:
