@@ -1,0 +1,10 @@
+hallo welt dies ist ein test
+hallo verteilte systeme
+datenverarbeitung mit zeromq
+map reduce macht spass
+hallo welt noch einmal
+test test test
+ist das nicht cool
+verteilte rechensysteme sind spannend
+python und zmq sind ein gutes team
+dies ist der letzte satz
