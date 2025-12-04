@@ -1,4 +1,5 @@
 import zmq
+import zlib
 
 def main():
     context = zmq.Context()
@@ -42,7 +43,7 @@ def main():
             # Ergebnis 0 -> Reducer 1
             # Ergebnis 1 -> Reducer 2
             # Das garantiert, dass das Wort "hallo" IMMER beim gleichen Reducer landet.
-            target = hash(word) % 2
+            target = zlib.crc32(word.encode('utf-8')) % 2
 
             if target == 0:
                 sender_reducer1.send_string(word)
