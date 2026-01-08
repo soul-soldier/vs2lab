@@ -9,6 +9,9 @@ from constMutex import (
     ACTIVE,
     RECEIVE_TIMEOUT_SEC,
     SUSPECT_AFTER_SEC,
+    HEARTBEAT,
+    HEARTBEAT_INTERVAL_SEC,
+    HEARTBEAT_GRACE_SEC,
 )
 
 
@@ -53,6 +56,8 @@ class Process:
         self.peer_name = 'unassigned'  # The original peer name
         self.peer_type = 'unassigned'  # A flag indicating behavior pattern
         self.waiting_since: float | None = None  # wall-clock time when we requested ENTER
+        self.last_seen: dict[str, float] = {}  # heartbeat/communication timestamps per peer
+        self.last_heartbeat_sent: float = time.monotonic()
         self.logger = logging.getLogger("vs2lab.lab5.mutex.process.Process")
 
     def __mapid(self, id='-1'):
@@ -101,6 +106,8 @@ class Process:
             self.other_processes.remove(pid)
         if pid in self.all_processes:
             self.all_processes.remove(pid)
+        if pid in self.last_seen:
+            del self.last_seen[pid]
 
         # Remove all queued requests from the suspected peer.
         self.__purge_process_from_queue(pid)
@@ -113,6 +120,16 @@ class Process:
         self.__cleanup_queue()  # Sort the queue
         self.channel.send_to(self.other_processes, request_msg)  # Send request
         self.waiting_since = time.monotonic()
+
+    def __send_heartbeat(self):
+        now = time.monotonic()
+        if now - self.last_heartbeat_sent < HEARTBEAT_INTERVAL_SEC:
+            return
+        self.clock = self.clock + 1
+        msg = (self.clock, self.process_id, HEARTBEAT)
+        if self.other_processes:
+            self.channel.send_to(self.other_processes, msg)
+        self.last_heartbeat_sent = now
 
     def __allow_to_enter(self, requester):
         self.clock = self.clock + 1  # Increment clock value
@@ -159,14 +176,16 @@ class Process:
         if elapsed < SUSPECT_AFTER_SEC:
             return
 
-        # find who responded with any message after first message in queue -> process still responsive
-        responded = set([req[1] for req in self.queue[1:]])
-        missing = [pid for pid in list(self.other_processes) if pid not in responded]
-        for pid in missing:
-            self.__mark_suspected_crash(pid, f"no response after {elapsed:.1f}s")
+        now = time.monotonic()
+        stale = [pid for pid in list(self.other_processes)
+                 if now - self.last_seen.get(pid, 0) > HEARTBEAT_GRACE_SEC]
+        for pid in stale:
+            self.__mark_suspected_crash(pid, f"no heartbeat after {elapsed:.1f}s")
 
     def __receive(self):
         # Pick up any message (but only wait until timeout)
+        # Keep sending heartbeats while blocked in receive loops so peers do not suspect us.
+        self.__send_heartbeat()
         _receive = self.channel.receive_from(self.other_processes, RECEIVE_TIMEOUT_SEC)
 
         if _receive:
@@ -175,6 +194,9 @@ class Process:
 
             self.clock = max(self.clock, msg[0])  # Adjust clock value (compare timestamps -> synchronize)
             self.clock = self.clock + 1  # ...and increment
+
+            # Update liveness info on any message
+            self.last_seen[sender] = time.monotonic()
 
             self.logger.debug("{} received {} from {}.".format(
                 self.__mapid(),
@@ -188,6 +210,9 @@ class Process:
                 self.__allow_to_enter(msg[1])
             elif msg[2] == ALLOW:
                 self.queue.append(msg)  # Append an ALLOW
+            elif msg[2] == HEARTBEAT:
+                # nothing else to do, liveness already refreshed
+                pass
             elif msg[2] == RELEASE:
                 # Remove the releasing process ENTER msg if it exists
                 removed = False
@@ -227,6 +252,12 @@ class Process:
         self.other_processes = list(self.channel.subgroup('proc'))
         self.other_processes.remove(self.process_id)
 
+        now = time.monotonic()
+        # initialize liveness timestamps
+        for pid in self.other_processes:
+            self.last_seen[pid] = now
+        self.last_seen[self.process_id] = now
+
         self.peer_name = peer_name  # assign peer name
         self.peer_type = peer_type  # assign peer behavior
 
@@ -235,6 +266,8 @@ class Process:
 
     def run(self):
         while True:
+            # periodic heartbeat to signal liveness
+            self.__send_heartbeat()
             # Enter the critical section if
             # 1) there are more than one process left and
             # 2) this peer has active behavior and

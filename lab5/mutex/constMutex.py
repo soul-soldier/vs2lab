@@ -2,6 +2,7 @@
 ENTER = 'ENTER'
 ALLOW = 'ALLOW'
 RELEASE = 'RELEASE'
+HEARTBEAT = 'HEARTBEAT'
 # Process behaviors
 ACTIVE = 'ACTIVE'
 PASSIVE = 'PASSIVE'
@@ -12,3 +13,7 @@ BEHAVIOR_TYPES = [ACTIVE, PASSIVE]
 # while we are waiting to enter the critical section.
 RECEIVE_TIMEOUT_SEC = 3
 SUSPECT_AFTER_SEC = 6
+
+# Heartbeats for crash suspicion
+HEARTBEAT_INTERVAL_SEC = 1.5
+HEARTBEAT_GRACE_SEC = 4.5
