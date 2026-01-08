@@ -158,25 +158,24 @@ class Process:
             processes_with_later_message)
         return first_in_queue and all_have_answered
 
-    # Suspect peers that didn't respond after a certain timout period while process is waiting to ENTER CS
+    # Suspect peers that didn't respond after a certain timeout period
     def __suspect_unresponsive_peers(self) -> None:
 
-        if self.waiting_since is None:
-            return
         if not self.queue:
             return
 
-        # Only suspect while process is waiting to ENTER CS
-        if self.queue[0][1] != self.process_id and not any(
-            msg[1] == self.process_id and msg[2] == ENTER for msg in self.queue
-        ):
-            return
-
-        elapsed = time.monotonic() - self.waiting_since
-        if elapsed < SUSPECT_AFTER_SEC:
-            return
-
         now = time.monotonic()
+
+        # If we actively wait for CS, use the waiting duration to gate suspicion.
+        if self.waiting_since is not None:
+            elapsed = now - self.waiting_since
+            if elapsed < SUSPECT_AFTER_SEC:
+                return
+        else:
+            # Passive peers (or actives not currently waiting) may still want to
+            # clear stale requests from clearly silent peers.
+            elapsed = HEARTBEAT_GRACE_SEC
+
         stale = [pid for pid in list(self.other_processes)
                  if now - self.last_seen.get(pid, 0) > HEARTBEAT_GRACE_SEC]
         for pid in stale:
@@ -184,7 +183,7 @@ class Process:
 
     def __receive(self):
         # Pick up any message (but only wait until timeout)
-        # Keep sending heartbeats while blocked in receive loops so peers do not suspect us.
+        # Keep sending heartbeats while blocked in receive loops so peers do not suspect us
         self.__send_heartbeat()
         _receive = self.channel.receive_from(self.other_processes, RECEIVE_TIMEOUT_SEC)
 
@@ -287,7 +286,15 @@ class Process:
                 self.logger.debug("{} enters CS for {} milliseconds."
                                   .format(self.__mapid(), sleep_time))
                 print(" CS <- {}".format(self.__mapid()))
-                time.sleep(sleep_time/1000)
+                # Sleep in small chunks so we can keep sending heartbeats while in CS
+                target = sleep_time / 1000
+                cs_start = time.monotonic()
+                while True:
+                    self.__send_heartbeat()
+                    elapsed = time.monotonic() - cs_start
+                    if elapsed >= target:
+                        break
+                    time.sleep(min(0.2, target - elapsed))
 
                 # ... then leave CS
                 print(" CS -> {}".format(self.__mapid()))
