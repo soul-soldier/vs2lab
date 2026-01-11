@@ -1,7 +1,7 @@
 import logging
 import os
 
-
+# nur als Beispiel, wird für Recovery in dieser Implementierung nicht benutzt
 def create_log(name):
     """
     Create a persistent log (file) of protocol state
