@@ -300,6 +300,7 @@ eines Teilnehmers) und senden entsprechende Nachrichten an `P_k`. Dann verfährt
 - Für die Bestimmung eines neuen Koordinators können Sie eine deterministische 
   Zuweisung verwenden (z.B. der Teilnehmer mit der kleinsten ID). Ein 
   verteilter Wahlalgorithmus ist nicht nötig.
+- Aus Einfachheitsgründen werden Teilnehmerausfälle und Nachrichtenverluste nicht beachtet in diesem Implementierungsversuch.
 
 ... stay tuned (Hinweise zur Installation/Konfiguration im Labor-README)
 

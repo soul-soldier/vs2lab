@@ -161,8 +161,8 @@ class Process:
     # Suspect peers that didn't respond after a certain timeout period
     def __suspect_unresponsive_peers(self) -> None:
 
-        if not self.queue:
-            return
+        # if not self.queue:
+        #    return
 
         now = time.monotonic()
 
