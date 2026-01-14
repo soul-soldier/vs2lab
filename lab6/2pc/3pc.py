@@ -24,6 +24,7 @@ logger = logging.getLogger('vs2lab.lab6.3pc.3pc')
 
 
 def create_and_run(num_bits, proc_class, enter_bar, run_bar):
+    # similar to 2pc implementation
     chan = lab_channel.Channel(n_bits=num_bits)
     proc = proc_class(chan)
     enter_bar.wait()
@@ -33,10 +34,10 @@ def create_and_run(num_bits, proc_class, enter_bar, run_bar):
 
 
 if __name__ == '__main__':
-    m = 8
-    n = 3
+    m = 8 # Number of bits for process ids
+    n = 3 # Number of participants
 
-    # Flush communication channel
+    # Flush communication channel (remove potential leftover messages)
     chan = lab_channel.Channel()
     chan.channel.flushall()
 
@@ -45,6 +46,7 @@ if __name__ == '__main__':
     bar1 = mp.Barrier(n + 1)
     bar2 = mp.Barrier(n + 1)
 
+    # Create and start participant processes
     participants = []
     for i in range(n):
         p = mp.Process(
@@ -55,6 +57,7 @@ if __name__ == '__main__':
         participants.append(p)
         p.start()
 
+    # Create and start coordinator process
     c = mp.Process(
         target=create_and_run,
         name='Coordinator3PC',

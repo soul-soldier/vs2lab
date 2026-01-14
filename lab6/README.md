@@ -315,3 +315,100 @@ Code zudem als Zip-Archiv und laden Sie dieses im ILIAS hoch.
 Third Edition, 723 DOI 10.1007/978-1-4419-8834-8_18, Springer Science+Business
 Media, LLC 2011, aus dem HsKA Netz zum freien Download:
 [link.springer.com/book/10.1007/978-1-4419-8834-8](https://link.springer.com/book/10.1007/978-1-4419-8834-8)
+
+## 5 Test-Kommandos (3PC)
+
+### 5.1 Redis starten (daemonized)
+
+```bash
+cd ~/git/vs2lab/lab6
+redis-server --daemonize yes --dir "$PWD" --dbfilename dump.rdb --appendonly no
+redis-cli ping
+```
+
+### 5.2 Standard-Lauf (Zufall: lokale Aborts + Koordinator-Crashes möglich)
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+pipenv run python 3pc.py
+```
+
+### 5.3 Deterministischer COMMIT (Happy Path)
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_NO_CRASH=1 \
+VS2LAB_3PC_FORCE_SUCCESS=1 \
+pipenv run python 3pc.py
+```
+
+### 5.4 Deterministischer GLOBAL_ABORT (genau ein Vote-Abort)
+
+Hier votet *genau ein* Teilnehmer (der mit der kleinsten ID) für Abort.
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_NO_CRASH=1 \
+VS2LAB_3PC_FORCE_SUCCESS=1 \
+VS2LAB_3PC_FORCE_ABORT_MINPID=1 \
+pipenv run python 3pc.py
+```
+
+### 5.5 Koordinator-Crash an definierter Stelle
+
+`VS2LAB_3PC_CRASH_AT` erzwingt einen Crash an einer bestimmten Stelle.
+Wenn `VS2LAB_3PC_CRASH_AT` gesetzt ist, werden zusätzlich alle zufälligen Koordinator-Crashes deaktiviert,
+damit der Test deterministisch ist.
+
+- Crash in `INIT` (Teilnehmer aborten, weil kein `VOTE_REQUEST` kommt)
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_CRASH_AT=INIT \
+pipenv run python 3pc.py
+```
+
+- Crash in `WAIT` (nach `VOTE_REQUEST`): Terminierung über neuen Koordinator → Abort
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_CRASH_AT=WAIT \
+VS2LAB_3PC_FORCE_SUCCESS=1 \
+pipenv run python 3pc.py
+```
+
+- Crash in `PRECOMMIT` (nach `PREPARE_COMMIT`): Terminierung über neuen Koordinator → Commit
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_CRASH_AT=PRECOMMIT \
+VS2LAB_3PC_FORCE_SUCCESS=1 \
+pipenv run python 3pc.py
+```
+
+### 5.6 Teilnehmer-Crash simulieren (ein Teilnehmer, MIN oder MAX)
+
+`VS2LAB_3PC_PARTICIPANT_CRASH_STATE` simuliert das „Ausfallen“ eines Teilnehmers, indem
+ein Prozess vor dem Senden einer bestimmten Nachricht beendet wird.
+
+- Ein Teilnehmer crasht in `READY` (vor `VOTE_COMMIT`) → Koordinator timeout in `WAIT` → Abort
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_NO_CRASH=1 \
+VS2LAB_3PC_FORCE_SUCCESS=1 \
+VS2LAB_3PC_PARTICIPANT_CRASH_STATE=READY \
+VS2LAB_3PC_PARTICIPANT_WHO=MIN \
+pipenv run python 3pc.py
+```
+
+- Ein Teilnehmer crasht in `PRECOMMIT` (vor `READY_COMMIT`) → Koordinator timeout in `PRECOMMIT` → Commit
+
+```bash
+cd ~/git/vs2lab/lab6/2pc
+VS2LAB_3PC_NO_CRASH=1 \
+VS2LAB_3PC_FORCE_SUCCESS=1 \
+VS2LAB_3PC_PARTICIPANT_CRASH_STATE=PRECOMMIT \
+VS2LAB_3PC_PARTICIPANT_WHO=MIN \
+pipenv run python 3pc.py
+```
