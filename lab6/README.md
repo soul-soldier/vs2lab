@@ -344,7 +344,7 @@ pipenv run python 3pc.py
 
 ### 5.4 Deterministischer GLOBAL_ABORT (genau ein Vote-Abort)
 
-Hier votet *genau ein* Teilnehmer (der mit der kleinsten ID) für Abort.
+Hier votet genau ein Teilnehmer (der mit der kleinsten ID) für Abort.
 
 ```bash
 cd ~/git/vs2lab/lab6/2pc

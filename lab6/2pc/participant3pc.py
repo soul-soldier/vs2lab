@@ -44,6 +44,26 @@ def _state_rank(state: str) -> int:
     }.get(state, 0)
 
 
+def _coord_state_to_participant_state(coord_state: str) -> str:
+    # Map the elected coordinator's state to the corresponding participant state for alignment.
+    if coord_state == 'WAIT':
+        return 'READY'
+    if coord_state in {'PRECOMMIT', 'COMMIT', 'ABORT'}:
+        return coord_state
+    return 'READY'
+
+
+def _sorted_pids(pids: set[str]) -> list[str]:
+    return sorted(pids, key=lambda pid: int(pid))
+
+
+def _second_min_pid(pids: set[str]) -> str | None:
+    ordered = _sorted_pids(pids)
+    if len(ordered) < 2:
+        return None
+    return ordered[1]
+
+
 class Participant3PC:
     """Implements a simplified three phase commit participant (3PC).
 
@@ -108,7 +128,7 @@ class Participant3PC:
         ann = CoordinatorAnnouncement(NEW_COORDINATOR, coordinator_state, leader)
         self.channel.send_to(self.all_participants, ann)
 
-    def _receive_decision_after_crash(self) -> str:
+    def _receive_decision_after_crash(self, leader_override: str | None = None, attempted: set[str] | None = None) -> str:
         """Termination protocol after coordinator crash.
 
         Triggered when we are in READY or PRECOMMIT and the coordinator stops responding.
@@ -116,7 +136,13 @@ class Participant3PC:
 
         Returns: GLOBAL_COMMIT or GLOBAL_ABORT
         """
-        leader = _min_pid(self.all_participants)
+        if attempted is None:
+            attempted = set()
+
+        if leader_override is not None:
+            leader = leader_override
+        else:
+            leader = _min_pid(self.all_participants)
 
         # If we are the elected new coordinator.
         if self.participant == leader:
@@ -132,6 +158,23 @@ class Participant3PC:
 
             self.logger.info('Elected new coordinator %s in state %s.', leader, coord_state)
             self._broadcast_new_coordinator(coord_state, leader)
+
+            # Give other participants a chance to align their state and send the
+            # corresponding message back to us.
+            # Participants in a later state will ignore our announcement.
+            aligned_from: set[str] = set()
+            align_loops = 10
+            while align_loops > 0:
+                align_loops -= 1
+                msg = self.channel.receive_from(self.all_participants, TIMEOUT)
+                if not msg:
+                    continue
+                sender, payload = msg
+                if sender == leader:
+                    continue
+                if payload in {VOTE_COMMIT, READY_COMMIT}:
+                    aligned_from.add(sender)
+                    continue
 
             # Decide according to termination rules
             if coord_state == 'WAIT':
@@ -182,21 +225,66 @@ class Participant3PC:
 
                 seen_announcement = payload.coordinator_state
 
-                # State alignment (only if we are "behind")
-                if payload.coordinator_state == 'PRECOMMIT' and self.state == 'READY':
-                    self._enter_state('PRECOMMIT')
-                    self.channel.send_to({leader}, READY_COMMIT)
+                announced_participant_state = _coord_state_to_participant_state(payload.coordinator_state)
 
-                # If leader announces WAIT we do not downgrade PRECOMMIT here;
-                # we only allow ABORT once GLOBAL_ABORT arrives.
+                # Final states are immutable: never switch ABORT<->COMMIT.
+                if self.state in {'COMMIT', 'ABORT'}:
+                    if announced_participant_state != self.state:
+                        continue
+
+                # Participants in a later state ignore the announcement.
+                if _state_rank(self.state) > _state_rank(announced_participant_state):
+                    continue
+
+                # Align our state to the new coordinator's state
+                if announced_participant_state == 'READY':
+                    # If we were still INIT, we must complete local work first.
+                    if self.state == 'INIT':
+                        decision = LOCAL_ABORT if self._should_force_abort() else self._do_work()
+                        if decision == LOCAL_ABORT:
+                            self._enter_state('ABORT')
+                            self.channel.send_to({leader}, VOTE_ABORT)
+                            continue
+
+                    if self.state != 'READY':
+                        self._enter_state('READY')
+                    self.channel.send_to({leader}, VOTE_COMMIT)
+                    continue
+
+                if announced_participant_state == 'PRECOMMIT':
+                    if self.state == 'INIT':
+                        decision = LOCAL_ABORT if self._should_force_abort() else self._do_work()
+                        if decision == LOCAL_ABORT:
+                            self._enter_state('ABORT')
+                            self.channel.send_to({leader}, VOTE_ABORT)
+                            continue
+                        self._enter_state('READY')
+
+                    if self.state != 'PRECOMMIT':
+                        self._enter_state('PRECOMMIT')
+                    self.channel.send_to({leader}, READY_COMMIT)
+                    continue
+
+                if announced_participant_state in {'COMMIT', 'ABORT'}:
+                    # Final states: we can immediately align locally; the leader
+                    # will still broadcast GLOBAL_*.
+                    if self.state != announced_participant_state:
+                        self._enter_state(announced_participant_state)
+                    continue
+
                 continue
 
             # ignore everything else
 
-        # If we didn't get anything conclusive, default safe outcome:
-        # - From READY: abort is safe.
-        # - From PRECOMMIT: commit is safe (but we might have missed it).
-        return GLOBAL_ABORT if self.state != 'PRECOMMIT' else GLOBAL_COMMIT
+        # If we didn't get anything conclusive, assume the elected leader also died.
+        # Per your requirement: elect the *second* smallest pid as the next leader.
+        if leader not in attempted:
+            attempted.add(leader)
+
+        next_leader = _second_min_pid(self.all_participants)
+        if next_leader is not None and next_leader not in attempted:
+            self.logger.info('No termination decision received from %s; re-electing %s.', leader, next_leader)
+            return self._receive_decision_after_crash(leader_override=next_leader, attempted=attempted)
 
     def run(self) -> str:
         # Phase 1b: wait for vote request until TIMEOUT
